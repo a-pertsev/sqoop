@@ -35,6 +35,8 @@ import org.apache.sqoop.mapreduce.DBWritable;
 import org.apache.hadoop.util.ReflectionUtils;
 
 import org.apache.sqoop.util.LoggingUtils;
+import org.postgresql.core.BaseStatement;
+import org.postgresql.core.QueryExecutor;
 
 /**
  * A RecordReader that reads records from a SQL table.
@@ -72,6 +74,8 @@ public class DBRecordReader<T extends DBWritable> extends
 
   private String tableName;
 
+  private String driverName;
+
   /**
    * @param split The InputSplit to read data for
    * @throws SQLException
@@ -88,6 +92,7 @@ public class DBRecordReader<T extends DBWritable> extends
     this.connection = conn;
     this.dbConf = dbConfig;
     this.conditions = cond;
+    this.driverName = conn.getMetaData().getDatabaseProductName().toUpperCase();
     if (fields != null) {
       this.fieldNames = Arrays.copyOf(fields, fields.length);
     }
@@ -106,6 +111,13 @@ public class DBRecordReader<T extends DBWritable> extends
     }
 
     LOG.info("Executing query: " + query);
+    LOG.info("driverName: " + driverName);
+
+    if (driverName.startsWith("POSTGRESQL")) {
+      BaseStatement postgresStatement = (BaseStatement) statement;
+      postgresStatement.executeWithFlags(QueryExecutor.QUERY_SUPPRESS_BEGIN);
+      return postgresStatement.getResultSet();
+    }
     return statement.executeQuery();
   }
 
@@ -164,7 +176,9 @@ public class DBRecordReader<T extends DBWritable> extends
         statement.close();
       }
       if (null != connection && !connection.isClosed()) {
-        connection.commit();
+        if (!driverName.startsWith("POSTGRESQL")) {
+          connection.commit();
+        }
         connection.close();
       }
     } catch (SQLException e) {
